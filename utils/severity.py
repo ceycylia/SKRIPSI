@@ -14,12 +14,12 @@ def compute_severity(lesion_mask, leaf_mask):
 
 
 def is_healthy(severity):
-    return severity <= HEALTHY_THRESHOLD
+    return severity < HEALTHY_THRESHOLD
 
 
 def severity_category(severity):
     """Kategori keparahan sesuai spesifikasi sistem."""
-    if severity <= HEALTHY_THRESHOLD:
+    if severity < HEALTHY_THRESHOLD:
         return "Sehat"
     if severity <= 25.0:
         return "Ringan"

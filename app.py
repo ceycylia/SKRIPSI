@@ -1,326 +1,138 @@
-"""Aplikasi Streamlit — Diagnosis Penyakit Daun Anggur.
-
-File ini berfokus pada UI/alur halaman. Logic model, preprocessing,
-inference, threshold, dan class names tetap berada di modul utils.
-"""
-
+"""Antarmuka penelitian diagnosis daun anggur; pipeline berada di utils."""
 from __future__ import annotations
 
 import streamlit as st
-from PIL import Image
-
+from PIL import Image, UnidentifiedImageError
 from utils.inference import run_diagnosis
 from utils.model_loader import load_all_models
 from utils.ui_helpers import (
-    inject_page_styles,
-    render_about_section_html,
-    render_footer,
-    render_result_dashboard,
+    inject_page_styles, render_about_section_html, render_footer,
+    render_result_dashboard, render_hero_html, render_feature_cards_html,
+    render_diagnosis_intro_html, icon, render_severity_legend,
 )
 
-# ─────────────────────────────────────────────────────────────
-# Konfigurasi halaman
-# ─────────────────────────────────────────────────────────────
-st.set_page_config(
-    page_title="Diagnosis Daun Anggur — Skripsi USU",
-    page_icon="🍇",
-    layout="wide",
-    initial_sidebar_state="collapsed",
-)
-
-PAGE_LABELS = {
-    "beranda": "Beranda",
-    "diagnosis": "Diagnosis Citra",
-    "tentang": "Tentang Sistem",
-}
+st.set_page_config(page_title="Diagnosis Daun Anggur — Skripsi USU",
+                   page_icon=":material/eco:", layout="wide", initial_sidebar_state="collapsed")
+PAGE_LABELS = {"beranda": "Beranda", "diagnosis": "Diagnosis Citra", "tentang": "Tentang Sistem"}
 LABEL_TO_PAGE = {label: key for key, label in PAGE_LABELS.items()}
-
-# ─────────────────────────────────────────────────────────────
-# Session state
-# ─────────────────────────────────────────────────────────────
-if "page" not in st.session_state:
-    st.session_state.page = "beranda"
-if "diagnosis_result" not in st.session_state:
-    st.session_state.diagnosis_result = None
-if "last_file" not in st.session_state:
-    st.session_state.last_file = None
-
+for key, value in (("page", "beranda"), ("diagnosis_result", None), ("last_file", None)):
+    if key not in st.session_state:
+        st.session_state[key] = value
 inject_page_styles()
 
-
-# ─────────────────────────────────────────────────────────────
-# Helpers
-# ─────────────────────────────────────────────────────────────
-def navigate(page_key: str) -> None:
-    """Pindah halaman — hanya ubah state halaman utama."""
+def navigate(page_key):
     st.session_state.page = page_key
 
-
-def reroute(page_key: str) -> None:
+def reroute(page_key):
     navigate(page_key)
     st.rerun()
 
-
 @st.cache_resource
 def load_models():
-    """Load semua model sekali saja selama session Streamlit."""
     return load_all_models()
 
+def show_navbar():
+    with st.container(key="navigation"):
+        brand, menu = st.columns([1, 1], vertical_alignment="center")
+        with brand:
+            st.markdown(f'<div class="brand-row">{icon("leaf")}<span>Diagnosis Daun Anggur<small>PENELITIAN · USU</small></span></div>', unsafe_allow_html=True)
+        with menu:
+            labels = list(PAGE_LABELS.values())
+            selected = st.radio("Navigasi", labels,
+                index=labels.index(PAGE_LABELS.get(st.session_state.page, "Beranda")),
+                horizontal=True, label_visibility="collapsed")
+            if LABEL_TO_PAGE[selected] != st.session_state.page:
+                reroute(LABEL_TO_PAGE[selected])
 
-def show_navbar() -> None:
-    """Navbar stabil berbasis radio horizontal, bukan button berjauhan."""
-    nav_labels = list(PAGE_LABELS.values())
-    current_label = PAGE_LABELS.get(st.session_state.page, "Beranda")
+def page_beranda():
+    with st.container(key="hero"):
+        left, right = st.columns([1.15, 1], gap="large", vertical_alignment="center")
+        with left:
+            st.markdown(render_hero_html(), unsafe_allow_html=True)
+            if st.button("Mulai Diagnosis", key="cta_start", type="primary"):
+                reroute("diagnosis")
+            st.markdown('<div class="researcher"><strong>Cecylia Dear Amizafatel <span> / 221402059</span></strong><p>Program Studi Teknologi Informasi<br>Fakultas Ilmu Komputer dan Teknologi Informasi – USU</p></div>', unsafe_allow_html=True)
+        with right:
+            st.markdown('''<figure class="specimen">
+<div class="specimen-heading"><span>OBJEK PENELITIAN</span><span>01 / Vitis vinifera</span></div>
+<svg class="leaf-study" viewBox="0 0 440 320" role="img" aria-label="Diagram pengamatan daun anggur, dengan penanda area daun dan lesi. Bukan hasil diagnosis.">
+<path d="M220 264 C169 258 113 228 77 188 L122 178 L74 133 L130 139 L127 82 L180 117 L217 47 L248 116 L306 80 L297 141 L365 128 L326 175 L368 197 C318 235 272 260 220 264Z" fill="#DCEBE3" stroke="#26735B" stroke-width="2"/>
+<g fill="none" stroke="#26735B" stroke-width="1.5"><path d="M218 289 L218 92 M218 244 L120 183 M218 221 L145 120 M218 199 L302 120 M218 244 L330 192"/><path d="M174 218 L169 188 M267 220 L287 191 M188 165 L179 139"/></g>
+<g fill="#C59B45" fill-opacity=".45" stroke="#94732E"><ellipse cx="266" cy="167" rx="13" ry="10"/><ellipse cx="279" cy="184" rx="7" ry="5"/><ellipse cx="164" cy="173" rx="8" ry="6"/></g>
+<g fill="none" stroke="#66736D"><path d="M142 127 L85 57 L34 57"/><path d="M279 166 L343 65 L409 65"/></g>
+<g fill="#173F35" font-family="sans-serif" font-size="11"><text x="28" y="44">AREA DAUN</text><text x="345" y="52">AREA LESI</text></g>
+</svg><figcaption><strong>Dari citra, memahami kondisi daun.</strong><span>Ilustrasi area pengamatan · bukan hasil diagnosis</span></figcaption>
+</figure>''', unsafe_allow_html=True)
+    st.markdown(render_feature_cards_html(), unsafe_allow_html=True)
 
-    brand_col, menu_col = st.columns([1.15, 1.0], vertical_alignment="center")
-    with brand_col:
-        st.markdown(
-            """
-            <div class="brand-row">
-                <span class="brand-logo">🍇</span>
-                <span class="brand-title">Diagnosis Daun Anggur</span>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+def _image_card(image, title, caption, number):
+    st.markdown(f'<div class="image-heading"><span>0{number}</span><h3>{title}</h3></div>', unsafe_allow_html=True)
+    st.image(image, use_container_width=True)
+    st.caption(caption)
 
-    with menu_col:
-        selected_label = st.radio(
-            "Navigasi",
-            nav_labels,
-            index=nav_labels.index(current_label),
-            horizontal=True,
-            label_visibility="collapsed",
-        )
-        selected_page = LABEL_TO_PAGE[selected_label]
-        if selected_page != st.session_state.page:
-            navigate(selected_page)
-            st.rerun()
-
-
-def _image_card(image, title: str, caption: str, number: int) -> None:
-    """Card gambar kecil dan konsisten untuk hasil segmentasi."""
-    st.markdown(
-        f"""
-        <div class="image-card-head">
-            <span class="image-card-num">{number}</span>
-            <span>{title}</span>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    with st.container(border=True):
-        st.image(image, use_container_width=True)
-        st.caption(caption)
-
-
-# ─────────────────────────────────────────────────────────────
-# Halaman Beranda
-# ─────────────────────────────────────────────────────────────
-def page_beranda() -> None:
-    hero_left, hero_right = st.columns([1.05, 0.95], gap="large", vertical_alignment="center")
-
-    with hero_left:
-        st.markdown(
-            """
-            <section class="hero-copy">
-                <div class="pill">🌿 Sistem Cerdas untuk Pertanian Presisi</div>
-                <h1 class="hero-title-main">Klasifikasi Penyakit Daun Anggur dan Estimasi Tingkat Keparahan</h1>
-                <p class="hero-subtitle-main">Menggunakan EfficientNet-B0 dan U-Net</p>
-                <div class="gold-line"></div>
-                <div class="identity-list">
-                    <p><span>👤</span><b>Ceycylia Dear Amizafatel</b> - 221402059</p>
-                    <p><span>🎓</span>Program Studi Teknologi Informasi</p>
-                    <p><span>🏛️</span>Fakultas Ilmu Komputer dan Teknologi Informasi - USU</p>
-                </div>
-            </section>
-            """,
-            unsafe_allow_html=True,
-        )
-        if st.button("Mulai Diagnosis →", key="cta_start", type="primary"):
-            reroute("diagnosis")
-
-    with hero_right:
-        st.markdown(
-            """
-            <section class="ai-visual-card">
-                <div class="leaf-orbit">🍃</div>
-                <h2>Deep Learning untuk Pertanian Presisi</h2>
-                <div class="chip-row">
-                    <span>U-Net</span>
-                    <span>EfficientNet-B0</span>
-                    <span>Segmentasi</span>
-                    <span>Klasifikasi</span>
-                    <span>Severity</span>
-                </div>
-                <div class="severity-mini">
-                    <div class="severity-mini-label">Severity</div>
-                    <div class="severity-mini-bar"></div>
-                </div>
-            </section>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    st.markdown(
-        """
-        <section class="feature-grid">
-            <article class="feature-card">
-                <span class="feature-number">1</span>
-                <div class="feature-icon">🍃</div>
-                <h3>Segmentasi Daun</h3>
-                <p>Memisahkan area daun anggur dari latar belakang citra.</p>
-            </article>
-            <article class="feature-card">
-                <span class="feature-number">2</span>
-                <div class="feature-icon">🔬</div>
-                <h3>Segmentasi Lesi</h3>
-                <p>Mendeteksi bercak atau area lesi pada permukaan daun.</p>
-            </article>
-            <article class="feature-card">
-                <span class="feature-number">3</span>
-                <div class="feature-icon">📊</div>
-                <h3>Klasifikasi & Severity</h3>
-                <p>Menghasilkan jenis penyakit serta kategori tingkat keparahan.</p>
-            </article>
-        </section>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-# ─────────────────────────────────────────────────────────────
-# Halaman Diagnosis
-# ─────────────────────────────────────────────────────────────
-def page_diagnosis() -> None:
-    intro_col, upload_col = st.columns([0.9, 1.1], gap="large", vertical_alignment="top")
-
-    with intro_col:
-        st.markdown(
-            """
-            <section class="diagnosis-intro">
-                <div class="pill">🌿 Sistem Cerdas untuk Pertanian Presisi</div>
-                <h1>Diagnosis Citra Daun Anggur</h1>
-                <p>
-                    Unggah satu citra daun anggur untuk dilakukan segmentasi daun,
-                    segmentasi lesi, estimasi tingkat keparahan, dan klasifikasi penyakit.
-                </p>
-                <div class="gold-line"></div>
-            </section>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    with upload_col:
-        with st.container(border=True):
-            st.markdown('<h3 class="upload-title">☁️ Unggah Citra</h3>', unsafe_allow_html=True)
-            uploaded_file = st.file_uploader(
-                "Pilih citra daun anggur",
-                type=["jpg", "jpeg", "png", "bmp", "webp"],
-                label_visibility="collapsed",
-            )
-
+def page_diagnosis():
+    left, right = st.columns([.85, 1.35], gap="large")
+    with left:
+        st.markdown(render_diagnosis_intro_html(), unsafe_allow_html=True)
+    with right:
+        with st.container(key="upload"):
+            st.markdown(f'<h2 class="upload-title">{icon("upload")} Unggah citra daun</h2>', unsafe_allow_html=True)
+            st.caption("JPG, JPEG, PNG, BMP, atau WEBP · maksimal 10 MB")
+            uploaded_file = st.file_uploader("Pilih citra daun anggur",
+                type=["jpg", "jpeg", "png", "bmp", "webp"], label_visibility="collapsed")
             image = None
-            process = False
             if uploaded_file is not None:
                 if st.session_state.last_file != uploaded_file.name:
                     st.session_state.diagnosis_result = None
                     st.session_state.last_file = uploaded_file.name
-
-                image = Image.open(uploaded_file).convert("RGB")
-                preview_col, action_col = st.columns([0.95, 1.05], gap="medium", vertical_alignment="center")
-                with preview_col:
-                    st.image(image, width=340)
-                    st.caption(uploaded_file.name)
-                with action_col:
-                    st.markdown(
-                        '<p class="helper-text">Pastikan citra menampilkan daun anggur dengan jelas.</p>',
-                        unsafe_allow_html=True,
-                    )
-                    process = st.button(
-                        "🔍 Proses Diagnosis",
-                        key="btn_process",
-                        type="primary",
-                        use_container_width=True,
-                    )
-            else:
-                st.info("Format yang didukung: JPG, JPEG, PNG, BMP, WEBP.")
-
+                try:
+                    image = Image.open(uploaded_file).convert("RGB")
+                    preview, detail = st.columns([1, 1], gap="medium")
+                    with preview:
+                        st.image(image, use_container_width=True)
+                    with detail:
+                        st.markdown("**Citra siap diperiksa**")
+                        st.caption(uploaded_file.name)
+                        st.caption("Periksa kembali ketajaman gambar dan pastikan seluruh daun terlihat.")
+                except (UnidentifiedImageError, OSError, Image.DecompressionBombError):
+                    st.error("Gambar tidak dapat dibaca. Coba unggah ulang dalam format JPG atau PNG.")
+            process = st.button("Proses Diagnosis", key="btn_process", type="primary",
+                                disabled=image is None, use_container_width=True)
+            if image is None:
+                st.caption("Hasil analisis akan muncul di bawah setelah citra diproses.")
             if process and image is not None:
-                with st.spinner("Memproses citra..."):
+                with st.status("Menyiapkan model diagnosis…", expanded=True) as status:
                     try:
                         models = load_models()
+                        st.write("Memeriksa area daun dan lesi, lalu menghitung hasil diagnosis…")
                         st.session_state.diagnosis_result = run_diagnosis(image, models)
+                        status.update(label="Analisis selesai. Hasil tersedia di bawah.", state="complete", expanded=False)
                     except Exception as exc:
+                        status.update(label="Analisis belum berhasil.", state="error")
                         st.error(f"Terjadi kesalahan saat inference: {exc}")
                         st.session_state.diagnosis_result = None
-
     result = st.session_state.get("diagnosis_result")
     if result is not None:
-        st.markdown(
-            """
-            <section class="section-heading">
-                <h2>Hasil Visualisasi</h2>
-                <p>Hasil segmentasi daun, segmentasi lesi, dan citra hasil masking.</p>
-            </section>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        c1, c2, c3, c4 = st.columns(4, gap="small")
-        with c1:
-            _image_card(Image.fromarray(result["image_256"]), "Citra Asli", "Letterbox 256×256", 1)
-        with c2:
-            _image_card(result["leaf_overlay"], "Segmentasi Daun", "Area daun terdeteksi", 2)
-        with c3:
-            _image_card(result["masked_image"], "Daun BG Hitam", "Background di luar daun dihitamkan", 3)
-        with c4:
-            _image_card(result["lesion_overlay"], "Segmentasi Lesi", "Bercak lesi terdeteksi", 4)
-
+        st.markdown('<div class="section-heading"><span class="eyebrow">HASIL ANALISIS</span><h2>Melihat bagian yang terdeteksi</h2><p>Bandingkan citra dengan area daun dan lesi yang dikenali model.</p></div>', unsafe_allow_html=True)
+        with st.container(key="results-images"):
+            cols = st.columns(4, gap="medium")
+            figures = [
+                (result["image_256"], "Citra asli", "Citra masukan, disesuaikan ke 256 × 256."),
+                (result["leaf_overlay"], "Segmentasi daun", "Warna hijau menunjukkan area daun."),
+                (result["lesion_overlay"], "Segmentasi lesi", "Warna merah menunjukkan area lesi."),
+                (result["masked_image"], "Daun tanpa latar", "Latar di luar daun dihitamkan."),
+            ]
+            for idx, (col, figure) in enumerate(zip(cols, figures), 1):
+                with col:
+                    _image_card(*figure, idx)
         render_result_dashboard(result)
 
-
-# ─────────────────────────────────────────────────────────────
-# Halaman Tentang
-# ─────────────────────────────────────────────────────────────
-def page_tentang() -> None:
-    st.markdown(
-        """
-        <section class="section-heading section-heading--large">
-            <h1>Tentang Sistem</h1>
-            <p>Ringkasan arsitektur model dan alur kerja sistem diagnosis berbasis deep learning.</p>
-        </section>
-        """,
-        unsafe_allow_html=True,
-    )
+def page_tentang():
+    st.markdown('<div class="page-heading"><span class="eyebrow">CATATAN PENELITIAN</span><h1>Tentang sistem</h1><p>Pendekatan berbasis citra untuk mengenali penyakit dan mengukur keparahan pada daun anggur.</p></div>', unsafe_allow_html=True)
     st.markdown(render_about_section_html(), unsafe_allow_html=True)
-    st.markdown(
-        """
-        <section class="severity-card severity-card--standalone">
-            <h3>Kategori Keparahan</h3>
-            <div class="severity-row"><span class="dot dot-green"></span><b>Sehat</b><span>0% – 0,5%</span></div>
-            <div class="severity-row"><span class="dot dot-light"></span><b>Ringan</b><span>&gt;0,5% – 25%</span></div>
-            <div class="severity-row"><span class="dot dot-yellow"></span><b>Sedang</b><span>&gt;25% – 50%</span></div>
-            <div class="severity-row"><span class="dot dot-red"></span><b>Berat</b><span>&gt;50%</span></div>
-        </section>
-        """,
-        unsafe_allow_html=True,
-    )
+    with st.expander("Panduan kategori keparahan", expanded=True):
+        st.markdown(render_severity_legend(), unsafe_allow_html=True)
 
-
-# ─────────────────────────────────────────────────────────────
-# Main
-# ─────────────────────────────────────────────────────────────
 show_navbar()
-
-page = st.session_state.page
-if page == "beranda":
-    page_beranda()
-elif page == "diagnosis":
-    page_diagnosis()
-elif page == "tentang":
-    page_tentang()
-else:
-    reroute("beranda")
-
+{"beranda": page_beranda, "diagnosis": page_diagnosis, "tentang": page_tentang}.get(st.session_state.page, page_beranda)()
 render_footer()

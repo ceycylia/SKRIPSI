@@ -24,7 +24,7 @@ __all__ = [
 ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
 FONTS_URL = (
     "https://fonts.googleapis.com/css2?"
-    "family=Inter:wght@400;500;600;700;800&family=Merriweather:wght@700;800&display=swap"
+    "family=Inter:wght@400;500;600;700;800&display=swap"
 )
 
 RECOMMENDATIONS = {
@@ -60,15 +60,15 @@ DISCLAIMER = (
 )
 
 SEVERITY_LEGEND = [
-    ("Sehat", "0% – 0,5%", "green"),
-    ("Ringan", ">0,5% – 25%", "light"),
+    ("Sehat", "< 0,50%", "green"),
+    ("Ringan", "0,5% – 25%", "light"),
     ("Sedang", ">25% – 50%", "yellow"),
     ("Berat", ">50%", "red"),
 ]
 
 SEVERITY_RANGE_HINT = {
-    "Sehat": "0% – 0,5%",
-    "Ringan": ">0,5% – 25%",
+    "Sehat": "< 0,50%",
+    "Ringan": "0,5% – 25%",
     "Sedang": ">25% – 50%",
     "Berat": ">50%",
 }
@@ -103,205 +103,80 @@ def _confidence_text(result: dict) -> tuple[str, str]:
     return f"{conf:.1f}%", "Tingkat keyakinan model"
 
 
+
+def icon(name: str) -> str:
+    paths = {
+        "leaf": '<path d="M20 4C10 3 4 7 4 13a7 7 0 0 0 7 7c6 0 10-6 9-16Z"/><path d="M4 21 15 10"/>',
+        "upload": '<path d="M12 16V3m-5 5 5-5 5 5M4 16v5h16v-5"/>',
+    }
+    return f'<svg class="outline-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{paths.get(name, paths["leaf"])}</svg>'
+
 def render_result_dashboard(result: dict) -> None:
-    """Ringkasan hasil: stat cards, probabilitas, rekomendasi, legenda."""
-    label = get_diagnosis_label(result)
+    from html import escape
+    label = escape(get_diagnosis_label(result))
     category = result.get("severity_category") or "Sehat"
-    severity = float(result.get("severity", 0.0))
-    range_hint = SEVERITY_RANGE_HINT.get(category, "")
+    severity = float(result.get("severity", 0))
+    tone = {"Sehat": "green", "Ringan": "green", "Sedang": "yellow", "Berat": "red"}.get(category, "green")
     conf_text, conf_sub = _confidence_text(result)
+    st.markdown(f'''<section class="result-summary">
+<div><span class="eyebrow">HASIL DIAGNOSIS</span><h2>{label}</h2><span class="status status-{tone}">{escape(category)}</span></div>
+<div class="result-number"><span>Keparahan daun</span><strong>{severity:.2f}<small>%</small></strong><span>Luas lesi / luas daun</span></div>
+<div class="result-confidence"><span>Keyakinan klasifikasi</span><strong>{conf_text}</strong><span>{conf_sub}</span></div>
+</section><p class="interpretation">Area lesi terdeteksi mencakup <strong>{severity:.2f}%</strong> dari area daun. Berdasarkan ambang sistem, hasil ini termasuk kategori <strong>{escape(category.lower())}</strong>.</p>''', unsafe_allow_html=True)
+    left, right = st.columns([1, 1.15], gap="large")
+    with left:
+        st.markdown("### Probabilitas kelas")
+        classification = result.get("classification") or {}
+        if result.get("is_healthy"):
+            st.caption("Klasifikasi penyakit tidak dijalankan karena severity berada di bawah 0,50%.")
+        elif not classification.get("probabilities"):
+            st.caption("Data probabilitas tidak tersedia.")
+        else:
+            for name, prob in classification["probabilities"].items():
+                st.progress(min(max(float(prob), 0), 1), text=f"{name} · {float(prob)*100:.1f}%")
+    with right:
+        st.markdown("### Rekomendasi penanganan")
+        for item in RECOMMENDATIONS.get(get_recommendation_key(result), RECOMMENDATIONS["Sehat"]):
+            st.markdown(f"- {item}")
+    st.markdown(f'<p class="system-note">{DISCLAIMER}</p>', unsafe_allow_html=True)
+    with st.expander("Lihat panduan kategori keparahan"):
+        st.markdown(render_severity_legend(), unsafe_allow_html=True)
 
-    stat_row = f"""
-<section class="stat-row">
-  <article class="stat-card stat-card--wide">
-    <div class="stat-card__icon">🛡️</div>
-    <div>
-      <div class="stat-card__label">Hasil Diagnosis</div>
-      <div class="stat-card__value">{label}</div>
-      <div class="stat-card__sub">Keluaran utama sistem</div>
-    </div>
-  </article>
-  <article class="stat-card">
-    <div class="stat-card__icon">◎</div>
-    <div>
-      <div class="stat-card__label">Severity</div>
-      <div class="stat-card__value">{severity:.2f}%</div>
-      <div class="stat-card__sub">Persentase keparahan</div>
-    </div>
-  </article>
-  <article class="stat-card">
-    <div class="stat-card__icon">🍃</div>
-    <div>
-      <div class="stat-card__label">Kategori Keparahan</div>
-      <div class="stat-card__value">{category}</div>
-      <div class="stat-card__sub">{range_hint}</div>
-    </div>
-  </article>
-  <article class="stat-card">
-    <div class="stat-card__icon">📈</div>
-    <div>
-      <div class="stat-card__label">Confidence</div>
-      <div class="stat-card__value">{conf_text}</div>
-      <div class="stat-card__sub">{conf_sub}</div>
-    </div>
-  </article>
-</section>
-"""
+def render_severity_legend() -> str:
+    from html import escape
+    rows = "".join(f'<div class="severity-row"><span class="dot dot-{tone}"></span><strong>{name}</strong><span>{escape(rng)}</span></div>' for name, rng, tone in SEVERITY_LEGEND)
+    return f'<div class="severity-legend">{rows}</div>'
 
-    st.markdown(stat_row, unsafe_allow_html=True)
-
-    col_prob, col_rec, col_leg = st.columns([1.15, 1.05, 0.9], gap="medium")
-    with col_prob:
-        _render_probability_section(result)
-    with col_rec:
-        _render_recommendation_section(result)
-    with col_leg:
-        st.markdown(_render_severity_legend_card(), unsafe_allow_html=True)
-
-
-def _render_probability_section(result: dict) -> None:
-    """Probabilitas kelas — Streamlit native untuk cabang penyakit (hindari HTML mentah)."""
-    with st.container(border=True):
-        st.markdown(
-            '<h3 class="native-card-title">Probabilitas Kelas</h3>',
-            unsafe_allow_html=True,
-        )
-
-        if result.get("is_healthy") or not result.get("classification"):
-            st.markdown(
-                '<p class="muted-text">Tidak tersedia karena daun dikategorikan sehat berdasarkan severity.</p>',
-                unsafe_allow_html=True,
-            )
-            return
-
-        probs = result.get("classification", {}).get("probabilities", {})
-        if not probs:
-            st.markdown(
-                '<p class="muted-text">Data probabilitas tidak tersedia.</p>',
-                unsafe_allow_html=True,
-            )
-            return
-
-        for class_name, prob in probs.items():
-            pct = float(prob) * 100
-            st.markdown(f"**{class_name}** — {pct:.1f}%")
-            st.progress(min(max(float(prob), 0.0), 1.0))
-
-
-def _render_recommendation_section(result: dict) -> None:
-    """Rekomendasi — Streamlit native agar konsisten dengan bagian probabilitas."""
-    key = get_recommendation_key(result)
-    bullets = RECOMMENDATIONS.get(key, RECOMMENDATIONS["Sehat"])
-
-    with st.container(border=True):
-        st.markdown(
-            '<h3 class="native-card-title">Rekomendasi Penanganan</h3>',
-            unsafe_allow_html=True,
-        )
-        for item in bullets:
-            st.markdown(f"✓ {item}")
-        st.markdown(
-            f'<div class="note-box">{DISCLAIMER}</div>',
-            unsafe_allow_html=True,
-        )
-
-
-def _render_severity_legend_card() -> str:
-    rows = "".join(
-        f'<div class="severity-row"><span class="dot dot-{dot}"></span><b>{name}</b><span>{rng}</span></div>'
-        for name, rng, dot in SEVERITY_LEGEND
-    )
-    return f'<div class="detail-card detail-card--legend"><h3>Kategori Keparahan</h3>{rows}</div>'
-
-
-def render_about_section_html() -> str:
-    return """
-<section class="about-card">
-  <div class="about-grid">
-    <article>
-      <h3>Model Segmentasi</h3>
-      <p><strong>U-Net + EfficientNet-B0</strong> digunakan untuk segmentasi daun dan segmentasi lesi.</p>
-    </article>
-    <article>
-      <h3>Estimasi Severity</h3>
-      <p><strong>Severity</strong> dihitung dari rasio piksel lesi terhadap piksel daun × 100%.</p>
-    </article>
-    <article>
-      <h3>Klasifikasi Penyakit</h3>
-      <p><strong>EfficientNet-B0</strong> mengklasifikasikan Black Measles, Black Rot, dan Isariopsis Leaf Spot.</p>
-    </article>
-    <article>
-      <h3>Keputusan Sehat</h3>
-      <p>Kondisi <strong>Sehat</strong> ditentukan jika severity ≤ 0,5%.</p>
-    </article>
-  </div>
-</section>
-"""
-
-
-def render_footer() -> None:
-    st.markdown(
-        """
-<footer class="site-footer">
-  <div class="site-footer__inner">
-    <div>
-      <div class="footer-brand">🍇 Diagnosis Daun Anggur</div>
-      <p>Sistem diagnosis penyakit daun anggur berbasis deep learning.</p>
-    </div>
-    <div>
-      <div class="footer-title">Institusi</div>
-      <p>Program Studi Teknologi Informasi<br>Fakultas Ilmu Komputer dan Teknologi Informasi<br>Universitas Sumatera Utara</p>
-    </div>
-    <div>
-      <div class="footer-title">Identitas</div>
-      <p>Ceycylia Dear Amizafatel<br>221402059</p>
-    </div>
-  </div>
-</footer>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-# ─────────────────────────────────────────────────────────────
-# Backward-compatible helper names for older app.py versions.
-# ─────────────────────────────────────────────────────────────
 def render_hero_html() -> str:
-    chips = "".join(f"<span>{x}</span>" for x in ["U-Net", "EfficientNet-B0", "Segmentasi", "Klasifikasi", "Severity"])
-    return f"""
-<section class="legacy-hero-html">
-  <div class="hero-copy">
-    <div class="pill">🌿 Sistem Cerdas untuk Pertanian Presisi</div>
-    <h1 class="hero-title-main">Klasifikasi Penyakit Daun Anggur dan Estimasi Tingkat Keparahan</h1>
-    <p class="hero-subtitle-main">Menggunakan EfficientNet-B0 dan U-Net</p>
-  </div>
-  <div class="ai-visual-card"><div class="leaf-orbit">🍃</div><h2>Deep Learning untuk Pertanian Presisi</h2><div class="chip-row">{chips}</div></div>
-</section>
-"""
-
+    return '''<section class="hero-copy"><span class="eyebrow">SISTEM DIAGNOSIS BERBASIS DEEP LEARNING</span>
+<h1>Kenali penyakit daun.<br><span class="hero-emphasis">Pahami keparahannya.</span></h1>
+<p>Analisis citra daun anggur untuk mengenali jenis penyakit dan memperkirakan luas lesi melalui segmentasi dan klasifikasi.</p>
+<div class="model-meta">U-Net <span>/</span> EfficientNet-B0</div></section>'''
 
 def render_feature_cards_html() -> str:
-    return """
-<section class="feature-grid">
-  <article class="feature-card"><span class="feature-number">1</span><div class="feature-icon">🍃</div><h3>Segmentasi Daun</h3><p>Memisahkan area daun anggur dari latar belakang citra.</p></article>
-  <article class="feature-card"><span class="feature-number">2</span><div class="feature-icon">🔬</div><h3>Segmentasi Lesi</h3><p>Mendeteksi bercak atau area lesi pada permukaan daun.</p></article>
-  <article class="feature-card"><span class="feature-number">3</span><div class="feature-icon">📊</div><h3>Klasifikasi & Severity</h3><p>Menghasilkan jenis penyakit serta kategori tingkat keparahan.</p></article>
-</section>
-"""
-
+    steps = [("Segmentasi daun", "Memisahkan daun dari latar."),
+             ("Segmentasi lesi", "Menandai area yang bergejala."),
+             ("Klasifikasi", "Mengenali jenis penyakit."),
+             ("Estimasi keparahan", "Membaca proporsi area lesi.")]
+    items = "".join(f'<li><span class="step-number">0{i}</span><h3>{name}</h3><p>{desc}</p></li>' for i, (name, desc) in enumerate(steps, 1))
+    return f'<section class="workflow"><div class="workflow-heading"><span class="eyebrow">DARI CITRA KE INFORMASI</span><span>Empat komponen analisis</span></div><ol>{items}</ol><p class="workflow-note">Dalam pemrosesan, severity dihitung sebelum klasifikasi; daun dengan severity &lt; 0,50% dikategorikan sehat.</p></section>'
 
 def render_diagnosis_intro_html() -> str:
-    return """
-<section class="diagnosis-intro">
-  <div class="pill">🌿 Sistem Cerdas untuk Pertanian Presisi</div>
-  <h1>Diagnosis Citra Daun Anggur</h1>
-  <p>Unggah satu citra daun anggur untuk dilakukan segmentasi daun, segmentasi lesi, estimasi tingkat keparahan, dan klasifikasi penyakit.</p>
-</section>
-"""
+    return '''<section class="page-heading"><span class="eyebrow">DIAGNOSIS CITRA</span><h1>Mulai dari<br>satu daun.</h1>
+<p>Unggah citra daun anggur. Sistem akan menampilkan area daun, lesi, serta hasil analisisnya.</p>
+<div class="upload-guidance"><h3>Agar citra mudah dianalisis</h3><ol><li>Gunakan foto satu daun yang terlihat utuh.</li><li>Pilih pencahayaan merata, tanpa bayangan kuat.</li><li>Pastikan fokus tajam dan gejala terlihat jelas.</li></ol></div></section>'''
 
+def render_about_section_html() -> str:
+    return '''<div class="research-doc">
+<section><div class="doc-label">01 / TUJUAN</div><div><h2>Membaca kondisi daun melalui citra</h2><p>Penelitian ini menggabungkan segmentasi dan klasifikasi untuk membantu mengenali penyakit daun anggur serta mengestimasi tingkat keparahannya. Area lesi dibandingkan dengan area daun agar hasil dapat dibaca secara kuantitatif.</p></div></section>
+<section><div class="doc-label">02 / METODE</div><div><h2>Dua model segmentasi, satu model klasifikasi</h2><p><strong>U-Net dengan encoder EfficientNet-B0</strong> memisahkan area daun dan lesi. <strong>EfficientNet-B0</strong> mengklasifikasikan tiga penyakit: Black Measles, Black Rot, dan Isariopsis Leaf Spot.</p><ol><li>Citra disesuaikan dengan letterbox 256 × 256 dan dinormalisasi.</li><li>Model daun membentuk mask (threshold 0,45); latar dihitamkan.</li><li>Model lesi membentuk mask (threshold 0,40), dibatasi area daun.</li><li>Severity dihitung dari piksel lesi / piksel daun × 100%.</li><li>Jika severity &lt; 0,50%, hasilnya sehat. Selain itu, klasifikasi dijalankan pada citra 224 × 224.</li></ol></div></section>
+<section><div class="doc-label">03 / BATASAN</div><div><h2>Memahami konteks hasil</h2><p>Hasil dipengaruhi kualitas citra, pencahayaan, latar, dan kemiripan citra dengan data pelatihan. Cakupan klasifikasi terbatas pada tiga penyakit tersebut. Persentase keyakinan model bukan jaminan kebenaran diagnosis.</p><p>Sistem merupakan alat bantu penelitian berbasis citra, bukan pengganti pemeriksaan langsung oleh ahli pertanian.</p></div></section>
+<section><div class="doc-label">04 / PENELITI</div><div><h2>Cecylia Dear Amizafatel</h2><p>221402059 · Program Studi Teknologi Informasi<br>Fakultas Ilmu Komputer dan Teknologi Informasi – USU</p></div></section>
+</div>'''
+
+def render_footer() -> None:
+    st.markdown('<footer class="site-footer"><div><strong>Diagnosis Daun Anggur</strong><span>Aplikasi penelitian · Universitas Sumatera Utara</span></div><span>Cecylia Dear Amizafatel / 221402059</span></footer>', unsafe_allow_html=True)
 
 def render_section_header(title: str, description: str) -> None:
-    st.markdown(
-        f'<section class="section-heading"><h2>{title}</h2><p>{description}</p></section>',
-        unsafe_allow_html=True,
-    )
+    from html import escape
+    st.markdown(f'<div class="section-heading"><h2>{escape(title)}</h2><p>{escape(description)}</p></div>', unsafe_allow_html=True)

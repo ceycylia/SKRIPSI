@@ -1,9 +1,17 @@
 [browser]
 gatherUsageStats = false
-serverAddress = "localhost"
 
 [server]
 headless = true
+maxUploadSize = 10
 
 [runner]
 fastReruns = true
+
+[theme]
+base = "light"
+primaryColor = "#26735B"
+backgroundColor = "#F6F4EE"
+secondaryBackgroundColor = "#FCFCF9"
+textColor = "#18241F"
+font = "sans serif"

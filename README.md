@@ -53,6 +53,9 @@ Website/
 
 ## Instalasi
 
+Untuk hosting gratis, ikuti [panduan deployment](DEPLOYMENT.md).
+Konfigurasi deployment menggunakan Python 3.13 dan PyTorch CPU pada Linux/Windows.
+
 ```bash
 # Buat virtual environment
 python -m venv venv
